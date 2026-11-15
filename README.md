@@ -15,6 +15,16 @@ Any static web server works (GitHub Pages, Netlify, nginx, IIS). Opening
 `index.html` directly from disk (`file://`) can't fetch the workbook, but you can
 still load a workbook using the **Data source** button.
 
+## Netlify
+
+Live at **https://mp-wcd-commissioner-dashboard.netlify.app**. `netlify.toml` publishes the
+repo root with no build step and disables caching for `data/*`.
+
+To make updates fully automatic, link the Netlify site to this GitHub repo:
+*Site configuration → Build & deploy → Link repository*, branch of your choice.
+Each commit of a new `data/dashboard.xlsx` then redeploys in seconds, and open dashboards
+pick up the change within 15 s.
+
 ## Keeping data up to date
 
 There are three ways to feed the dashboard:
