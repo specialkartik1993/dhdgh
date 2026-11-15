@@ -45,6 +45,7 @@
   <div class="subbar">
     <nav class="tabs" id="tabs" role="tablist">
       <button role="tab" data-view="overview" class="active"><svg viewBox="0 0 24 24"><path d="M4 13h6V4H4zm0 7h6v-5H4zm10 0h6v-9h-6zm0-16v5h6V4z"/></svg><span>Overview</span></button>
+      <button role="tab" data-view="map"><svg viewBox="0 0 24 24"><path d="M12 21s-6-5.6-6-11a6 6 0 0 1 12 0c0 5.4-6 11-6 11z"/><circle cx="12" cy="10" r="2.2"/></svg><span>Map</span></button>
       <button role="tab" data-view="districts"><svg viewBox="0 0 24 24"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3zm6-1v13m6-10v13"/></svg><span>Districts</span></button>
       <button role="tab" data-view="nutrition"><svg viewBox="0 0 24 24"><path d="M12 21c-4.4 0-8-3.6-8-8 0-4 3-7 6-7 1 0 1.5.5 2 .5S13 6 14 6c3 0 6 3 6 7 0 4.4-3.6 8-8 8zM12 6c0-2 1-3.5 3-4"/></svg><span>Nutrition</span></button>
       <button role="tab" data-view="maternal"><svg viewBox="0 0 24 24"><path d="M12 21s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 5.6-7 10-7 10z"/></svg><span>Maternal</span></button>
@@ -123,6 +124,35 @@
           <div class="alert-summary" id="alertSummary"></div>
         </article>
       </div>
+    </section>
+
+    <!-- MAP -->
+    <section id="view-map" class="view" role="tabpanel">
+      <article class="card map-card">
+        <header class="card-head">
+          <div><h3>Madhya Pradesh district map</h3><p id="mapSub">Hover or tap a district to see its data</p></div>
+          <div class="toolbar">
+            <select class="mini-select" id="mapMetric" aria-label="Map indicator"></select>
+            <input type="search" class="search" id="mapSearch" list="mapDistricts" placeholder="Find district…" />
+            <datalist id="mapDistricts"></datalist>
+            <button class="chip" id="mapLabels" aria-pressed="false">Labels</button>
+          </div>
+        </header>
+        <div class="map-layout">
+          <div class="map-stage" id="mapStage">
+            <svg id="mapSvg" role="img" aria-label="Map of Madhya Pradesh districts" preserveAspectRatio="xMidYMid meet"></svg>
+            <div class="map-tip" id="mapTip" role="status"></div>
+            <div class="map-zoom">
+              <button class="icon-btn" data-zoom="in" aria-label="Zoom in">+</button>
+              <button class="icon-btn" data-zoom="out" aria-label="Zoom out">−</button>
+              <button class="icon-btn" data-zoom="reset" aria-label="Reset view"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+            </div>
+          </div>
+          <aside class="map-panel" id="mapPanel" aria-live="polite"></aside>
+        </div>
+        <div class="map-legend" id="mapLegend"></div>
+        <p class="hint map-source" id="mapSource"></p>
+      </article>
     </section>
 
     <!-- DISTRICTS -->
@@ -289,6 +319,7 @@
 
   <script src="vendor/xlsx.full.min.js"></script>
   <script src="vendor/chart.umd.min.js"></script>
+  <script src="js/mp-map.js"></script>
   <script src="js/data.js"></script>
   <script src="js/app.js"></script>
 </body>

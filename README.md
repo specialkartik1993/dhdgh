@@ -65,6 +65,9 @@ RAG bands (coverage indicators): **≥ 90 %** on track, **75–90 %** watch, **<
 ## Features
 
 - **Overview**: animated KPI tiles, indicator health (RAG counts), division comparison vs state average, top/bottom districts, and an alert summary.
+- **Map**: Madhya Pradesh choropleth (districts shaded by their value) for any indicator, with green/amber/red bands for coverage and 5 colour classes for counts and burden. It has hover tooltips, a tap-to-select district card, district search, zoom/pan/pinch, labels, and zoom-to-division when the division filter is set.
+  Boundaries come from [udit-001/india-maps-data](https://github.com/udit-001/india-maps-data) (52 districts). That source has no boundaries for Maihar, Mauganj and Pandhurna (formed 2023), so they appear as markers at their headquarters.
+  To rebuild the map file: `python3 tools/build_map.py madhya-pradesh.geojson` (writes `js/mp-map.js`).
 - **Districts**: a ranking chart for any indicator, a sortable and searchable table, CSV export, and a drill-down drawer for each district (indicators vs state, maternal, nutrition, alerts, AWC list).
 - **Nutrition, Maternal, AWCs, Alerts**: views for each of those topics, with filters.
 - A global **division filter**, a light/dark theme, skeleton loading, a progress bar, toasts and reduced-motion support.

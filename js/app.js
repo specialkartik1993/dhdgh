@@ -882,7 +882,340 @@
       <div class="ac-foot"><span>${esc(a.officer)}</span><span class="status ${statusClass(a.status)}">${esc(a.status)}</span></div>
     </div>`;
 
-  const RENDER = { overview: renderOverview, districts: renderDistricts, nutrition: renderNutrition, maternal: renderMaternal, awc: renderAwc, alerts: renderAlerts };
+  /* ================= MAP ================= */
+  const MAP_METRICS = [
+    ...INDICATORS.map((m) => ({ ...m, rag: true })),
+    ...BURDEN,
+    { k: 'awcs', label: 'Total AWCs', count: true },
+    { k: 'children', label: 'Active Children (0–6)', count: true },
+    { k: 'sam', label: 'SAM Cases', count: true, lowerBetter: true },
+    { k: 'alertsN', label: 'Active Alerts', count: true, lowerBetter: true },
+  ];
+  const mapState = { metric: 'me', selected: null, built: false, vb: null, full: null, labels: false, anim: 0 };
+  const keyName = (s) => String(s || '').toLowerCase().replace(/[^a-z]/g, '');
+  const mapFmt = (m, v) => (m.count ? fInt(v) : fPct(v));
+
+  function mapRows() {
+    const active = state.data.alerts.filter((a) => !/closed|resolved|done/i.test(a.status));
+    const cnt = new Map();
+    active.forEach((a) => cnt.set(a.district, (cnt.get(a.district) || 0) + 1));
+    return state.data.districts.map((d) => ({ ...d, alertsN: cnt.get(d.district) || 0 }));
+  }
+
+  // Five quantile classes over ALL districts, so a district's colour doesn't change with the division filter.
+  function mapScale(m, rows) {
+    if (m.rag) return { type: 'rag', color: (v) => (v === null || v === undefined ? 'var(--map-empty)' : `var(--${{ g: 'good', a: 'warn', r: 'crit' }[rag(v)]})`) };
+    const vals = rows.map((r) => r[m.k]).filter((v) => v !== null && v !== undefined && isFinite(v)).sort((a, b) => a - b);
+    const q = (p) => vals[Math.min(vals.length - 1, Math.floor(p * vals.length))];
+    const breaks = [q(0.2), q(0.4), q(0.6), q(0.8)];
+    const cls = (v) => breaks.filter((b) => v >= b).length;
+    return {
+      type: 'seq', breaks, min: vals[0], max: vals[vals.length - 1],
+      color: (v) => (v === null || v === undefined || !isFinite(v) ? 'var(--map-empty)' : `var(--map-${cls(v) + 1})`),
+    };
+  }
+
+  function buildMap() {
+    const M = window.MP_MAP;
+    const svg = $('#mapSvg');
+    if (!M) { $('#mapStage').innerHTML = '<p class="hint" style="padding:20px">Map data (js/mp-map.js) not found.</p>'; return; }
+    mapState.full = { x: -10, y: -10, w: M.width + 20, h: M.height + 20 };
+    mapState.vb = { ...mapState.full };
+    const ns = 'http://www.w3.org/2000/svg';
+    const minX = Math.min(...M.districts.map((d) => d.cx)), maxX = Math.max(...M.districts.map((d) => d.cx));
+    let html = '<g id="mapShapes">';
+    M.districts.forEach((d) => {
+      const delay = Math.round(((d.cx - minX) / (maxX - minX)) * 600);
+      html += `<path class="d" d="${d.d}" data-name="${esc(d.name)}" tabindex="0" role="button" aria-label="${esc(d.name)}" style="--d:${delay}"></path>`;
+    });
+    html += '</g><path class="map-hi" id="mapHi" style="opacity:0"></path><path class="map-sel" id="mapSel" style="opacity:0"></path><g id="mapPts">';
+    M.points.forEach((p) => {
+      html += `<g class="pt" data-name="${esc(p.name)}" tabindex="0" role="button" aria-label="${esc(p.name)} (new district)">
+        <circle class="map-pt-pulse" cx="${p.cx}" cy="${p.cy}" r="12" style="opacity:0"></circle>
+        <circle class="map-pt" cx="${p.cx}" cy="${p.cy}" r="8"></circle>
+        <circle class="map-pt-ring" cx="${p.cx}" cy="${p.cy}" r="11.5"></circle></g>`;
+    });
+    html += '</g><g id="mapLabelsG">';
+    M.districts.forEach((d) => { html += `<text class="map-label" x="${d.cx}" y="${d.cy}">${esc(d.name)}</text>`; });
+    M.points.forEach((p) => { html += `<text class="map-label pt-label" x="${p.cx}" y="${p.cy + 20}" data-cy="${p.cy}">${esc(p.name)}</text>`; });
+    html += '</g>';
+    svg.innerHTML = html;
+    svg.setAttribute('xmlns', ns);
+    setViewBox(mapState.vb);
+    $('#mapSource').textContent = M.source + ' Boundaries are indicative.';
+    wireMap();
+    mapState.built = true;
+  }
+
+  // Keep labels and markers a constant on-screen size while zooming.
+  function setViewBox(v) {
+    const svg = $('#mapSvg');
+    svg.setAttribute('viewBox', `${v.x} ${v.y} ${v.w} ${v.h}`);
+    const k = v.w / mapState.full.w;
+    svg.style.setProperty('--k', k.toFixed(4));
+    $$('#mapPts .pt', svg).forEach((g) => {
+      const [pulse, dot, ring] = g.querySelectorAll('circle');
+      pulse.setAttribute('r', 12 * k); dot.setAttribute('r', 8 * k); ring.setAttribute('r', 11.5 * k);
+    });
+    $$('#mapLabelsG text.pt-label', svg).forEach((t) => t.setAttribute('y', +t.dataset.cy + 20 * k));
+  }
+  function animateViewBox(to, dur = 650) {
+    const from = { ...mapState.vb }, t0 = performance.now(), id = ++mapState.anim;
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const step = (t) => {
+      if (id !== mapState.anim) return;
+      const p = reduce ? 1 : Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - p, 3);
+      mapState.vb = { x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e, w: from.w + (to.w - from.w) * e, h: from.h + (to.h - from.h) * e };
+      setViewBox(mapState.vb);
+      if (p < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+  function fitTo(els) {
+    if (!els.length) return animateViewBox(mapState.full);
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    els.forEach((el) => { const b = el.getBBox(); x0 = Math.min(x0, b.x); y0 = Math.min(y0, b.y); x1 = Math.max(x1, b.x + b.width); y1 = Math.max(y1, b.y + b.height); });
+    const pad = 30, F = mapState.full, ar = F.w / F.h;
+    let w = x1 - x0 + pad * 2, h = y1 - y0 + pad * 2;
+    if (w / h > ar) h = w / ar; else w = h * ar;
+    animateViewBox({ x: (x0 + x1) / 2 - w / 2, y: (y0 + y1) / 2 - h / 2, w, h });
+  }
+  function zoomBy(f, cx, cy) {
+    const v = mapState.vb, F = mapState.full;
+    const w = Math.min(F.w, Math.max(F.w / 8, v.w / f)), h = w * (v.h / v.w);
+    cx = cx ?? v.x + v.w / 2; cy = cy ?? v.y + v.h / 2;
+    const to = { x: cx - (cx - v.x) * (w / v.w), y: cy - (cy - v.y) * (h / v.h), w, h };
+    animateViewBox(to, 300);
+  }
+
+  function districtOfMapName(name) {
+    const k = keyName(name);
+    return mapRows().find((d) => keyName(d.district) === k) || null;
+  }
+
+  function wireMap() {
+    const stage = $('#mapStage'), svg = $('#mapSvg'), tip = $('#mapTip');
+    const toSvg = (cx, cy) => { const r = svg.getBoundingClientRect(); const v = mapState.vb;
+      const s = Math.max(v.w / r.width, v.h / r.height); const ox = (r.width - v.w / s) / 2, oy = (r.height - v.h / s) / 2;
+      return { x: v.x + (cx - r.left - ox) * s, y: v.y + (cy - r.top - oy) * s, s }; };
+    const targetName = (el) => el && el.closest && (el.closest('.d') || el.closest('.pt'))?.dataset.name;
+
+    // Hover tooltip (mouse/pen only)
+    stage.addEventListener('pointermove', (e) => {
+      if (e.pointerType === 'touch' || drag) return;
+      const name = targetName(e.target);
+      if (!name) { hideHover(); return; }
+      showHover(name);
+      const r = stage.getBoundingClientRect();
+      tip.style.left = Math.min(r.width - 100, Math.max(100, e.clientX - r.left)) + 'px';
+      tip.style.top = Math.max(110, e.clientY - r.top) + 'px';
+    });
+    stage.addEventListener('pointerleave', hideHover);
+
+    // Pan / pinch / click
+    const ptrs = new Map(); let drag = null, moved = 0, pinch = null;
+    stage.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('.map-zoom')) return;
+      ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      stage.setPointerCapture(e.pointerId);
+      moved = 0;
+      if (ptrs.size === 1) drag = { x: e.clientX, y: e.clientY, vb: { ...mapState.vb }, name: targetName(e.target) };
+      if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), vb: { ...mapState.vb } }; drag = null; }
+    });
+    stage.addEventListener('pointermove', (e) => {
+      if (!ptrs.has(e.pointerId)) return;
+      ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pinch && ptrs.size === 2) {
+        const [a, b] = [...ptrs.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y);
+        const mid = toSvg((a.x + b.x) / 2, (a.y + b.y) / 2); const f = d / pinch.d;
+        const F = mapState.full; const w = Math.min(F.w, Math.max(F.w / 8, pinch.vb.w / f)); const h = w * (pinch.vb.h / pinch.vb.w);
+        mapState.anim++; mapState.vb = { x: mid.x - (mid.x - mapState.vb.x) * (w / mapState.vb.w), y: mid.y - (mid.y - mapState.vb.y) * (h / mapState.vb.h), w, h };
+        setViewBox(mapState.vb); moved = 99; return;
+      }
+      if (!drag) return;
+      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      moved = Math.max(moved, Math.hypot(dx, dy));
+      if (moved > 6 && mapState.vb.w < mapState.full.w - 1) {
+        stage.classList.add('dragging'); hideHover();
+        const s = toSvg(0, 0).s; mapState.anim++;
+        mapState.vb = { ...mapState.vb, x: drag.vb.x - dx * s, y: drag.vb.y - dy * s };
+        setViewBox(mapState.vb);
+      }
+    });
+    const end = (e) => {
+      if (!ptrs.has(e.pointerId)) return;
+      ptrs.delete(e.pointerId);
+      if (ptrs.size < 2) pinch = null;
+      stage.classList.remove('dragging');
+      if (drag && moved < 6 && ptrs.size === 0) {
+        if (drag.name) selectMapDistrict(drag.name, { scroll: e.pointerType === 'touch' });
+        else selectMapDistrict(null);
+      }
+      if (ptrs.size === 0) drag = null;
+    };
+    stage.addEventListener('pointerup', end);
+    stage.addEventListener('pointercancel', end);
+    stage.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const p = toSvg(e.clientX, e.clientY);
+      zoomBy(e.deltaY < 0 ? 1.35 : 1 / 1.35, p.x, p.y);
+    }, { passive: false });
+    stage.addEventListener('dblclick', (e) => { const p = toSvg(e.clientX, e.clientY); zoomBy(1.8, p.x, p.y); });
+
+    svg.addEventListener('keydown', (e) => {
+      const name = targetName(e.target);
+      if (name && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); selectMapDistrict(name); }
+    });
+    svg.addEventListener('focusin', (e) => { const n = targetName(e.target); if (n) showHover(n); });
+
+    $('.map-zoom').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-zoom]'); if (!b) return;
+      if (b.dataset.zoom === 'in') zoomBy(1.5); else if (b.dataset.zoom === 'out') zoomBy(1 / 1.5); else fitDivision();
+    });
+  }
+
+  function shapeFor(name) {
+    return $(`#mapShapes .d[data-name="${CSS.escape(name)}"]`) || $(`#mapPts .pt[data-name="${CSS.escape(name)}"]`);
+  }
+  function outline(id, name) {
+    const el = $(id), sh = name && shapeFor(name);
+    if (!sh) { el.style.opacity = 0; return; }
+    if (sh.classList.contains('pt')) { const c = $('.map-pt', sh); const cx = +c.getAttribute('cx'), cy = +c.getAttribute('cy');
+      el.setAttribute('d', `M${cx - 10},${cy}a10,10 0 1,0 20,0a10,10 0 1,0 -20,0`); }
+    else el.setAttribute('d', sh.getAttribute('d'));
+    el.style.opacity = 1;
+  }
+
+  function showHover(name) {
+    const d = districtOfMapName(name); if (!d) return;
+    const m = MAP_METRICS.find((x) => x.k === mapState.metric);
+    const rows = mapRows().filter((r) => r[m.k] !== null && r[m.k] !== undefined);
+    const rank = [...rows].sort((a, b) => (m.lowerBetter ? a[m.k] - b[m.k] : b[m.k] - a[m.k])).findIndex((r) => r.district === d.district) + 1;
+    const pt = (window.MP_MAP.points || []).find((p) => keyName(p.name) === keyName(name));
+    $('#mapTip').innerHTML = `<b>${esc(d.district)}</b><small>${esc(d.division)} division${pt ? ' · new district' : ''}</small>
+      <div class="tv">${mapFmt(m, d[m.k])}</div><small>${esc(m.label)} · rank ${rank} of ${rows.length}${m.rag ? ' · ' + RAG_LABEL[rag(d[m.k])] : ''}</small>`;
+    $('#mapTip').classList.add('on');
+    outline('#mapHi', name);
+  }
+  function hideHover() { $('#mapTip').classList.remove('on'); $('#mapHi').style.opacity = 0; }
+
+  function selectMapDistrict(name, { scroll = false, zoom = false } = {}) {
+    const d = name && districtOfMapName(name);
+    mapState.selected = d ? d.district : null;
+    $$('#mapPts .map-pt-pulse').forEach((c) => (c.style.opacity = 0));
+    if (d && shapeFor(name)?.classList.contains('pt')) $('.map-pt-pulse', shapeFor(name)).style.opacity = 1;
+    outline('#mapSel', d ? name : null);
+    if (d && zoom) fitTo([shapeFor(name)]);
+    renderMapPanel();
+    if (scroll && d) setTimeout(() => $('#mapPanel').scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+  }
+
+  function fitDivision() {
+    if (!state.division) return animateViewBox(mapState.full);
+    const names = new Set(state.data.districts.filter((d) => d.division === state.division).map((d) => keyName(d.district)));
+    fitTo($$('#mapShapes .d').filter((p) => names.has(keyName(p.dataset.name))));
+  }
+
+  function renderMap() {
+    if (!window.MP_MAP) { buildMap(); return; }
+    if (!mapState.built) { buildMap(); if (state.division) setTimeout(fitDivision, 60); }
+    const m = MAP_METRICS.find((x) => x.k === mapState.metric);
+    const rows = mapRows();
+    const byKey = new Map(rows.map((r) => [keyName(r.district), r]));
+    const scale = mapScale(m, rows);
+    const inDiv = (r) => !state.division || (r && r.division === state.division);
+    hideHover();
+    if (state.division && mapState.selected) {
+      const sel = rows.find((r) => r.district === mapState.selected);
+      if (!sel || sel.division !== state.division) selectMapDistrict(null);
+    }
+
+    $$('#mapShapes .d').forEach((p) => {
+      const r = byKey.get(keyName(p.dataset.name));
+      p.style.fill = scale.color(r ? r[m.k] : null);
+      p.classList.toggle('dim', !inDiv(r));
+    });
+    $$('#mapPts .pt').forEach((g) => {
+      const r = byKey.get(keyName(g.dataset.name));
+      $('.map-pt', g).style.fill = scale.color(r ? r[m.k] : null);
+      g.style.opacity = inDiv(r) ? 1 : 0.2;
+      g.style.display = r ? '' : 'none';
+    });
+    $('#mapStage').classList.toggle('labels-on', mapState.labels);
+
+    const mapped = new Set([...window.MP_MAP.districts, ...window.MP_MAP.points].map((x) => keyName(x.name)));
+    const missing = rows.filter((r) => !mapped.has(keyName(r.district))).map((r) => r.district);
+    $('#mapSub').textContent = `${m.label} · ${state.division ? state.division + ' division' : 'all ' + rows.length + ' districts'}` +
+      (missing.length ? ` · not on map: ${missing.join(', ')}` : '');
+    $('#mapDistricts').innerHTML = rows.map((r) => `<option value="${esc(r.district)}">`).join('');
+
+    // Legend
+    const newKey = '<span class="key"><i class="dot"></i>New district (2023), shown at HQ</span>';
+    if (scale.type === 'rag') {
+      $('#mapLegend').innerHTML = `<span class="key"><i style="background:var(--good)"></i>On track ≥90%</span><span class="key"><i style="background:var(--warn)"></i>Watch 75–90%</span><span class="key"><i style="background:var(--crit)"></i>Off track &lt;75%</span>${newKey}`;
+    } else {
+      const b = [scale.min, ...scale.breaks, scale.max];
+      $('#mapLegend').innerHTML = `<span>${esc(m.label)}${m.lowerBetter ? ' (darker = higher burden)' : ' (darker = higher)'}</span><div class="scale">${[1, 2, 3, 4, 5].map((i) => `<span><i style="background:var(--map-${i})"></i>${mapFmt(m, b[i - 1])}${i === 5 ? '–' + mapFmt(m, b[5]) : '+'}</span>`).join('')}</div>${newKey}`;
+    }
+    if (mapState.selected && !rows.some((r) => r.district === mapState.selected)) mapState.selected = null;
+    renderMapPanel();
+  }
+
+  function renderMapPanel() {
+    const m = MAP_METRICS.find((x) => x.k === mapState.metric);
+    const rows = mapRows();
+    const scope = rows.filter((r) => !state.division || r.division === state.division);
+    const valid = scope.filter((r) => r[m.k] !== null && r[m.k] !== undefined);
+    const sorted = [...valid].sort((a, b) => (m.lowerBetter ? a[m.k] - b[m.k] : b[m.k] - a[m.k]));
+    const panel = $('#mapPanel');
+    const d = mapState.selected && rows.find((r) => r.district === mapState.selected);
+
+    if (!d) {
+      const A = WCD.aggregate(scope);
+      const total = m.count ? valid.reduce((s, r) => s + r[m.k], 0) : null;
+      const headline = m.count ? total : A[m.k];
+      const li = (r, i) => `<div class="mp-bar" data-pick="${esc(r.district)}"><span>${i + 1}. ${esc(r.district)}</span><b>${mapFmt(m, r[m.k])}</b></div>`;
+      const ragCounts = m.rag ? ['g', 'a', 'r'].map((c) => valid.filter((r) => rag(r[m.k]) === c).length) : null;
+      panel.innerHTML = `
+        <div class="mp-card"><div class="mp-kicker">${state.division ? esc(state.division) + ' division' : 'Madhya Pradesh'}</div>
+          <div class="mp-title">${esc(m.label)}</div>
+          <div class="mp-value">${mapFmt(m, headline)}</div>
+          <div class="mp-meta">${m.count ? 'Total across ' + valid.length + ' districts' : (m.rag ? ragChip(headline, RAG_LABEL[rag(headline)]) + ' ' : '') + 'Average across ' + valid.length + ' districts'}</div>
+          ${ragCounts ? `<div class="mp-facts"><div><b style="color:var(--good-ink)">${ragCounts[0]}</b><span>On track</span></div><div><b style="color:var(--warn-ink)">${ragCounts[1]}</b><span>Watch</span></div><div><b style="color:var(--crit-ink)">${ragCounts[2]}</b><span>Off track</span></div><div><b>${scope.length - valid.length}</b><span>No data</span></div></div>` : ''}
+          <div class="mp-note">Tap a district on the map, or pick one below.</div></div>
+        <div class="mp-card"><h4>${m.lowerBetter ? 'Lowest' : 'Highest'} ${esc(m.label)}</h4><div class="mp-bars">${sorted.slice(0, 5).map(li).join('')}</div></div>
+        <div class="mp-card"><h4>${m.lowerBetter ? 'Highest' : 'Lowest'} ${esc(m.label)}</h4><div class="mp-bars">${[...sorted].reverse().slice(0, 5).map(li).join('')}</div></div>`;
+      return;
+    }
+
+    const rank = sorted.findIndex((r) => r.district === d.district) + 1;
+    const pt = (window.MP_MAP.points || []).find((p) => keyName(p.name) === keyName(d.district));
+    const S = WCD.aggregate(rows);
+    panel.innerHTML = `
+      <div class="mp-card"><div class="mp-kicker">${esc(d.division)} division</div>
+        <div class="mp-title">${esc(d.district)} ${m.rag ? ragChip(d[m.k], RAG_LABEL[rag(d[m.k])]) : ''}</div>
+        <div class="mp-value">${mapFmt(m, d[m.k])}</div>
+        <div class="mp-meta">${esc(m.label)}${rank ? ` · rank ${rank} of ${valid.length}${state.division ? ' in division' : ''}` : ''}${!m.count && S[m.k] !== undefined ? ' · state ' + fPct(S[m.k]) : ''}</div>
+        ${pt ? `<div class="mp-note">New district (formed ${esc(pt.formed)}, from ${esc(pt.parent)}). Its boundary isn't in the map source yet, so it is shown as a marker at its headquarters.</div>` : ''}
+        <div class="mp-facts">
+          <div><b>${fInt(d.awcs)}</b><span>AWCs</span></div><div><b>${compact(d.children)}</b><span>Children 0–6</span></div>
+          <div><b>${fInt(d.sam)}</b><span>SAM (${fPct(d.samPct)})</span></div><div><b>${d.alertsN}</b><span>Active alerts</span></div>
+        </div>
+        <button class="btn primary" data-open="${esc(d.district)}">Open full district profile →</button>
+      </div>
+      <div class="mp-card"><h4>All coverage indicators</h4><div class="mp-bars">
+        ${INDICATORS.map((x) => `<div class="mp-bar ${x.k === m.k ? 'on' : ''}" data-metric="${x.k}"><span>${esc(x.label)}</span>${ragChip(d[x.k])}<div class="track"><i data-w="${(d[x.k] || 0) * 100}" style="background:${ragColor(d[x.k])}"></i></div></div>`).join('')}
+      </div><div class="compare-note" style="margin-top:8px">Tap an indicator to recolour the map</div></div>`;
+    requestAnimationFrame(() => setTimeout(() => $$('#mapPanel .track i').forEach((i) => (i.style.width = i.dataset.w + '%')), 30));
+  }
+
+  function setMapMetric(k) {
+    mapState.metric = k;
+    $('#mapMetric').value = k;
+    renderMap();
+  }
+
+  const RENDER = { overview: renderOverview, map: renderMap, districts: renderDistricts, nutrition: renderNutrition, maternal: renderMaternal, awc: renderAwc, alerts: renderAlerts };
 
   /* ================= Drawer ================= */
   function openDrawer(name, refresh = false) {
@@ -984,6 +1317,7 @@
     state.awcPage = 0;
     renderBadge();
     RENDER[state.view]();
+    if (mapState.built) fitDivision();
   }
 
   /* ================= Wire up ================= */
@@ -996,6 +1330,39 @@
     const metricOpts = (sel) => METRICS.map((m) => `<option value="${m.k}" ${m.k === sel ? 'selected' : ''}>${esc(m.label)}</option>`).join('');
     $('#divMetric').innerHTML = metricOpts(state.divMetric);
     $('#rankMetric').innerHTML = metricOpts(state.rankMetric);
+    $('#mapMetric').innerHTML = MAP_METRICS.map((m) => `<option value="${m.k}" ${m.k === mapState.metric ? 'selected' : ''}>${esc(m.label)}</option>`).join('');
+    mapState.labels = matchMedia('(min-width: 1100px)').matches;
+    $('#mapLabels').classList.toggle('on', mapState.labels);
+    $('#mapLabels').setAttribute('aria-pressed', mapState.labels);
+    $('#mapMetric').addEventListener('change', (e) => setMapMetric(e.target.value));
+    $('#mapLabels').addEventListener('click', (e) => {
+      mapState.labels = !mapState.labels;
+      e.currentTarget.classList.toggle('on', mapState.labels);
+      e.currentTarget.setAttribute('aria-pressed', mapState.labels);
+      $('#mapStage').classList.toggle('labels-on', mapState.labels);
+    });
+    $('#mapSearch').addEventListener('change', (e) => {
+      const d = state.data && state.data.districts.find((x) => keyName(x.district) === keyName(e.target.value));
+      if (!d) { if (e.target.value) toast('District not found', ' ' + e.target.value, 'err', 2500); return; }
+      if (state.division && d.division !== state.division) setDivision('');
+      const shape = shapeFor((window.MP_MAP.districts.concat(window.MP_MAP.points).find((x) => keyName(x.name) === keyName(d.district)) || {}).name || '');
+      selectMapDistrict(shape ? shape.dataset.name : d.district, { zoom: true });
+      e.target.value = '';
+      e.target.blur();
+    });
+    $('#mapPanel').addEventListener('click', (e) => {
+      const pick = e.target.closest('[data-pick]');
+      if (pick) {
+        const n = pick.dataset.pick;
+        const shape = shapeFor((window.MP_MAP.districts.concat(window.MP_MAP.points).find((x) => keyName(x.name) === keyName(n)) || {}).name || '');
+        selectMapDistrict(shape ? shape.dataset.name : n);
+        return;
+      }
+      const met = e.target.closest('[data-metric]');
+      if (met) { setMapMetric(met.dataset.metric); return; }
+      const op = e.target.closest('[data-open]');
+      if (op) openDrawer(op.dataset.open);
+    });
 
     const hash = location.hash.slice(1);
     if (RENDER[hash]) state.view = hash;
