@@ -301,6 +301,10 @@
       const on = b.dataset.view === v;
       b.classList.toggle('active', on);
       b.setAttribute('aria-selected', on);
+      if (on) {
+        const t = $('#tabs');
+        if (t.scrollWidth > t.clientWidth) t.scrollTo({ left: b.offsetLeft - (t.clientWidth - b.offsetWidth) / 2, behavior: 'smooth' });
+      }
     });
     if (!state.data) return;
     $$('.view').forEach((s) => s.classList.toggle('active', s.id === 'view-' + v));
