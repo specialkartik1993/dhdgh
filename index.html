@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f3d5e" />
+  <title>MP WCD Commissioner Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div id="progress" class="progress" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M12 2a5 5 0 0 1 5 5c0 2.4-1.7 4.4-4 4.9V14h3a1 1 0 1 1 0 2h-3v5a1 1 0 1 1-2 0v-5H8a1 1 0 1 1 0-2h3v-2.1A5 5 0 0 1 12 2Z"/></svg>
+      </div>
+      <div class="brand-text">
+        <span class="brand-kicker">Madhya Pradesh · Women &amp; Child Development</span>
+        <h1>Commissioner Dashboard</h1>
+      </div>
+    </div>
+
+    <div class="topbar-actions">
+      <div class="sync" id="sync" title="Data source status">
+        <span class="sync-dot"></span>
+        <span class="sync-text" id="syncText">Loading…</span>
+      </div>
+      <button class="icon-btn" id="refreshBtn" title="Refresh now" aria-label="Refresh data">
+        <svg viewBox="0 0 24 24" width="18" height="18"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M20 12a8 8 0 1 1-2.3-5.7M20 4v4h-4"/></svg>
+      </button>
+      <button class="icon-btn" id="sourceBtn" title="Data source" aria-label="Choose data source">
+        <svg viewBox="0 0 24 24" width="18" height="18"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M4 4h10l6 6v10H4zM14 4v6h6M8 14h8M8 17h5"/></svg>
+      </button>
+      <button class="icon-btn" id="themeBtn" title="Toggle theme" aria-label="Toggle dark mode">
+        <svg class="i-moon" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M20 15.5A8.5 8.5 0 0 1 8.5 4a8.5 8.5 0 1 0 11.5 11.5Z"/></svg>
+        <svg class="i-sun" viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="4" fill="currentColor"/><path stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="subbar">
+    <nav class="tabs" id="tabs" role="tablist">
+      <button role="tab" data-view="overview" class="active"><svg viewBox="0 0 24 24"><path d="M4 13h6V4H4zm0 7h6v-5H4zm10 0h6v-9h-6zm0-16v5h6V4z"/></svg><span>Overview</span></button>
+      <button role="tab" data-view="districts"><svg viewBox="0 0 24 24"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3zm6-1v13m6-10v13"/></svg><span>Districts</span></button>
+      <button role="tab" data-view="nutrition"><svg viewBox="0 0 24 24"><path d="M12 21c-4.4 0-8-3.6-8-8 0-4 3-7 6-7 1 0 1.5.5 2 .5S13 6 14 6c3 0 6 3 6 7 0 4.4-3.6 8-8 8zM12 6c0-2 1-3.5 3-4"/></svg><span>Nutrition</span></button>
+      <button role="tab" data-view="maternal"><svg viewBox="0 0 24 24"><path d="M12 21s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 5.6-7 10-7 10z"/></svg><span>Maternal</span></button>
+      <button role="tab" data-view="awc"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7M5 10v10h14V10M10 20v-6h4v6"/></svg><span>AWCs</span></button>
+      <button role="tab" data-view="alerts"><svg viewBox="0 0 24 24"><path d="M12 3l10 18H2zM12 10v5m0 3v.01"/></svg><span>Alerts</span><b class="badge" id="alertBadge"></b></button>
+    </nav>
+    <div class="filters">
+      <label class="select">
+        <span>Division</span>
+        <select id="divisionFilter"><option value="">All divisions</option></select>
+      </label>
+      <span class="period" id="period"></span>
+    </div>
+  </div>
+
+  <main id="main">
+    <!-- Skeleton shown during first load -->
+    <section id="skeleton" class="view active skeleton-view" aria-busy="true">
+      <div class="grid kpis">
+        <div class="card sk"></div><div class="card sk"></div><div class="card sk"></div><div class="card sk"></div>
+        <div class="card sk"></div><div class="card sk"></div><div class="card sk"></div><div class="card sk"></div>
+      </div>
+      <div class="grid two">
+        <div class="card sk tall"></div><div class="card sk tall"></div>
+      </div>
+    </section>
+
+    <!-- Error / empty state -->
+    <section id="errorView" class="view">
+      <div class="card empty">
+        <svg viewBox="0 0 24 24" width="48" height="48"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" d="M4 4h10l6 6v10H4zM14 4v6h6M9 14l6 4m0-4l-6 4"/></svg>
+        <h2>Couldn't load the Excel workbook</h2>
+        <p id="errorMsg"></p>
+        <div class="empty-actions">
+          <button class="btn primary" data-action="pick">Open Excel file</button>
+          <button class="btn" data-action="retry">Try again</button>
+        </div>
+        <p class="hint">Tip: serve this folder over HTTP (e.g. <code>python3 serve.py</code>) so <code>data/dashboard.xlsx</code> can be fetched.</p>
+      </div>
+    </section>
+
+    <!-- OVERVIEW -->
+    <section id="view-overview" class="view" role="tabpanel">
+      <div class="grid kpis" id="kpis"></div>
+
+      <div class="grid two">
+        <article class="card">
+          <header class="card-head">
+            <div><h3>Indicator health</h3><p>Districts by RAG band per coverage indicator</p></div>
+          </header>
+          <div class="legend" id="ragLegend"></div>
+          <div class="chart-box h320"><canvas id="ragChart"></canvas></div>
+        </article>
+
+        <article class="card">
+          <header class="card-head">
+            <div><h3>Division comparison</h3><p id="divChartSub">Average by division vs state</p></div>
+            <select class="mini-select" id="divMetric"></select>
+          </header>
+          <div class="chart-box h320"><canvas id="divChart"></canvas></div>
+        </article>
+      </div>
+
+      <div class="grid three">
+        <article class="card">
+          <header class="card-head"><div><h3>Top performers</h3><p id="topSub"></p></div></header>
+          <ol class="rank-list" id="topList"></ol>
+        </article>
+        <article class="card">
+          <header class="card-head"><div><h3>Needs attention</h3><p id="bottomSub"></p></div></header>
+          <ol class="rank-list" id="bottomList"></ol>
+        </article>
+        <article class="card">
+          <header class="card-head"><div><h3>Active alerts</h3><p>By category &amp; priority</p></div>
+            <button class="link-btn" data-goto="alerts">View all →</button></header>
+          <div class="alert-summary" id="alertSummary"></div>
+        </article>
+      </div>
+    </section>
+
+    <!-- DISTRICTS -->
+    <section id="view-districts" class="view" role="tabpanel">
+      <article class="card">
+        <header class="card-head">
+          <div><h3>District ranking</h3><p id="rankSub">Tap a bar to open the district</p></div>
+          <select class="mini-select" id="rankMetric"></select>
+        </header>
+        <div class="legend" id="rankLegend"></div>
+        <div class="scroll-y"><div class="chart-box" id="rankBox"><canvas id="rankChart"></canvas></div></div>
+      </article>
+
+      <article class="card">
+        <header class="card-head">
+          <div><h3>All districts</h3><p id="tableSub"></p></div>
+          <div class="toolbar">
+            <input type="search" class="search" id="districtSearch" placeholder="Search district…" />
+            <button class="btn small" id="exportCsv">Export CSV</button>
+          </div>
+        </header>
+        <div class="table-wrap"><table class="table" id="districtTable"></table></div>
+      </article>
+    </section>
+
+    <!-- NUTRITION -->
+    <section id="view-nutrition" class="view" role="tabpanel">
+      <div class="grid kpis" id="nutKpis"></div>
+      <div class="grid two">
+        <article class="card">
+          <header class="card-head"><div><h3>SAM &amp; MAM prevalence by division</h3><p>% of children measured</p></div></header>
+          <div class="legend" id="nutDivLegend"></div>
+          <div class="chart-box h320"><canvas id="nutDivChart"></canvas></div>
+        </article>
+        <article class="card">
+          <header class="card-head"><div><h3>Highest SAM prevalence</h3><p>Top 10 districts, % of measured</p></div></header>
+          <div class="chart-box h320"><canvas id="samTopChart"></canvas></div>
+        </article>
+      </div>
+      <div class="grid two">
+        <article class="card">
+          <header class="card-head"><div><h3>Stunting profile</h3><p>Severe vs moderate stunting, each dot a district</p></div></header>
+          <div class="chart-box h320"><canvas id="stuntChart"></canvas></div>
+        </article>
+        <article class="card">
+          <header class="card-head"><div><h3>SAM case management</h3><p>New cases, follow-ups and referrals</p></div>
+            <input type="search" class="search" id="nutSearch" placeholder="Search…" /></header>
+          <div class="table-wrap short"><table class="table" id="nutTable"></table></div>
+        </article>
+      </div>
+    </section>
+
+    <!-- MATERNAL -->
+    <section id="view-maternal" class="view" role="tabpanel">
+      <div class="grid kpis" id="matKpis"></div>
+      <div class="grid two">
+        <article class="card">
+          <header class="card-head"><div><h3>ANC visit cascade</h3><p>Average coverage, ANC 1 → ANC 4</p></div></header>
+          <div class="chart-box h320"><canvas id="ancChart"></canvas></div>
+        </article>
+        <article class="card">
+          <header class="card-head"><div><h3>Anaemia among pregnant women</h3><p>Top 10 districts by share with anaemia</p></div></header>
+          <div class="chart-box h320"><canvas id="anaemiaChart"></canvas></div>
+        </article>
+      </div>
+      <article class="card">
+        <header class="card-head"><div><h3>District maternal health</h3><p>ANC coverage, anaemia and gestational weight gain</p></div>
+          <input type="search" class="search" id="matSearch" placeholder="Search…" /></header>
+        <div class="table-wrap"><table class="table" id="matTable"></table></div>
+      </article>
+    </section>
+
+    <!-- AWC -->
+    <section id="view-awc" class="view" role="tabpanel">
+      <div class="grid kpis" id="awcKpis"></div>
+      <article class="card">
+        <header class="card-head"><div><h3>Infrastructure &amp; staffing status</h3><p>Share of sampled centres</p></div></header>
+        <div class="legend" id="awcLegend"></div>
+        <div class="chart-box h260"><canvas id="awcStatusChart"></canvas></div>
+      </article>
+      <article class="card">
+        <header class="card-head">
+          <div><h3>Anganwadi centre records</h3><p id="awcSub"></p></div>
+          <div class="toolbar">
+            <select class="mini-select" id="awcDistrict"><option value="">All districts</option></select>
+            <select class="mini-select" id="awcBuilding"><option value="">Any building</option></select>
+            <input type="search" class="search" id="awcSearch" placeholder="Code, name, project…" />
+          </div>
+        </header>
+        <div class="table-wrap"><table class="table" id="awcTable"></table></div>
+        <div class="pager" id="awcPager"></div>
+      </article>
+    </section>
+
+    <!-- ALERTS -->
+    <section id="view-alerts" class="view" role="tabpanel">
+      <div class="grid kpis" id="alertKpis"></div>
+      <article class="card">
+        <header class="card-head">
+          <div><h3>Alert register</h3><p id="alertSub"></p></div>
+          <div class="toolbar">
+            <div class="chips" id="prioChips"></div>
+            <select class="mini-select" id="alertStatus"><option value="">Any status</option></select>
+            <select class="mini-select" id="alertCat"><option value="">Any category</option></select>
+          </div>
+        </header>
+        <div class="alert-list" id="alertList"></div>
+      </article>
+    </section>
+
+    <footer class="foot">
+      <span id="footNote"></span>
+    </footer>
+  </main>
+
+  <!-- District drill-down drawer -->
+  <div class="scrim" id="scrim"></div>
+  <aside class="drawer" id="drawer" aria-hidden="true" role="dialog" aria-labelledby="drawerTitle">
+    <header class="drawer-head">
+      <div>
+        <span class="drawer-kicker" id="drawerKicker"></span>
+        <h2 id="drawerTitle"></h2>
+      </div>
+      <button class="icon-btn" id="drawerClose" aria-label="Close">
+        <svg viewBox="0 0 24 24" width="18" height="18"><path stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </header>
+    <div class="drawer-body" id="drawerBody"></div>
+  </aside>
+
+  <!-- Data source dialog -->
+  <div class="modal" id="sourceModal" aria-hidden="true" role="dialog" aria-labelledby="srcTitle">
+    <div class="modal-card">
+      <header class="drawer-head">
+        <h2 id="srcTitle">Data source</h2>
+        <button class="icon-btn" data-close aria-label="Close"><svg viewBox="0 0 24 24" width="18" height="18"><path stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </header>
+      <div class="modal-body">
+        <div class="src-option" id="srcServer">
+          <div>
+            <h4>Hosted workbook <span class="pill" id="srcServerState"></span></h4>
+            <p>Reads <code id="srcPath">data/dashboard.xlsx</code> and checks for changes every <b id="pollSecs">15</b>s. Replace that file and the dashboard updates on its own.</p>
+          </div>
+          <button class="btn" data-action="server">Use hosted file</button>
+        </div>
+        <div class="src-option">
+          <div>
+            <h4>Live local file <span class="pill" id="srcLocalState"></span></h4>
+            <p>Pick an Excel file on this computer. The dashboard watches it and reloads every time you save it in Excel (Chrome / Edge).</p>
+          </div>
+          <button class="btn primary" data-action="pick">Choose Excel file</button>
+        </div>
+        <label class="dropzone" id="dropzone">
+          <input type="file" id="fileInput" accept=".xlsx,.xlsm,.xls" hidden />
+          <svg viewBox="0 0 24 24" width="28" height="28"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M12 16V4m0 0l-4 4m4-4l4 4M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+          <span>Drop an .xlsx here, or tap to upload a one-off copy</span>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <div class="drop-overlay" id="dropOverlay"><div>Drop the Excel workbook to load it</div></div>
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <script src="vendor/xlsx.full.min.js"></script>
+  <script src="vendor/chart.umd.min.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
